@@ -878,7 +878,14 @@ function App() {
         <div
           className="flex h-full items-center justify-between gap-2 px-6"
           data-tauri-drag-region
-          style={{ WebkitAppRegion: "drag" } as any}
+          style={
+            {
+              WebkitAppRegion: "drag",
+              // Linux + overlay titlebar: keep a right-side safe zone so native
+              // window buttons are never covered by web content hit-testing.
+              paddingRight: isLinux() ? "108px" : undefined,
+            } as any
+          }
         >
           <div
             className="flex items-center gap-1"
