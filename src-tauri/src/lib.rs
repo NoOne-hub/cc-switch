@@ -449,6 +449,40 @@ pub fn run() {
                 Err(e) => log::warn!("✗ Failed to read skills migration flag: {e}"),
             }
 
+            // 1.2. 空表自恢复：当 skills 表为空时，自动扫描并导入现有 skills（含 .agent/.agents）
+            {
+                let has_existing = app_state
+                    .db
+                    .get_all_installed_skills()
+                    .map(|skills| !skills.is_empty())
+                    .unwrap_or(false);
+                if !has_existing {
+                    match crate::services::skill::SkillService::scan_unmanaged(&app_state.db) {
+                        Ok(unmanaged) if !unmanaged.is_empty() => {
+                            let dirs: Vec<String> =
+                                unmanaged.into_iter().map(|s| s.directory).collect();
+                            match crate::services::skill::SkillService::import_from_apps(
+                                &app_state.db,
+                                dirs,
+                            ) {
+                                Ok(imported) if !imported.is_empty() => {
+                                    log::info!(
+                                        "✓ Auto imported {} skill(s) into DB from existing directories",
+                                        imported.len()
+                                    );
+                                }
+                                Ok(_) => {}
+                                Err(e) => {
+                                    log::warn!("✗ Failed to auto import unmanaged skills: {e}");
+                                }
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(e) => log::warn!("✗ Failed to scan unmanaged skills: {e}"),
+                    }
+                }
+            }
+
             // 2. OMO 配置导入（当数据库中无 OMO provider 时，从本地文件导入）
             {
                 let has_omo = app_state

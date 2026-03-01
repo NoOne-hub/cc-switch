@@ -257,57 +257,72 @@ fn parse_branch_from_source_url(source_url: Option<&str>) -> Option<String> {
     None
 }
 
-/// 获取 `~/.agents/skills/` 目录（存在时返回）
+/// 获取候选 agent 根目录（按优先级）
+fn get_agent_roots() -> Vec<PathBuf> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    vec![home.join(".agent"), home.join(".agents")]
+}
+
+/// 获取 `~/.agent/skills/` 或 `~/.agents/skills/` 目录（存在时返回）
 fn get_agents_skills_dir() -> Option<PathBuf> {
-    dirs::home_dir()
-        .map(|h| h.join(".agents").join("skills"))
-        .filter(|p| p.exists())
+    get_agent_roots()
+        .into_iter()
+        .map(|root| root.join("skills"))
+        .find(|p| p.exists())
 }
 
 fn get_agents_skills_dir_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".agents").join("skills"))
+    let mut roots = get_agent_roots();
+    if roots.is_empty() {
+        None
+    } else {
+        Some(roots.remove(0).join("skills"))
+    }
 }
 
-/// 解析 `~/.agents/.skill-lock.json`，返回 skill_name -> 仓库信息
+/// 解析 `~/.agent/.skill-lock.json` 或 `~/.agents/.skill-lock.json`，返回 skill_name -> 仓库信息
 fn parse_agents_lock() -> HashMap<String, LockRepoInfo> {
-    let path = match dirs::home_dir() {
-        Some(h) => h.join(".agents").join(".skill-lock.json"),
-        None => {
-            log::warn!("无法获取 HOME 目录，跳过解析 agents lock 文件");
-            return HashMap::new();
-        }
-    };
-    let content = match fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(e) => {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                log::debug!("未找到 agents lock 文件: {}", path.display());
-            } else {
-                log::warn!("读取 agents lock 文件失败 ({}): {}", path.display(), e);
+    let mut merged: HashMap<String, LockRepoInfo> = HashMap::new();
+    let mut parsed_files = 0usize;
+
+    for root in get_agent_roots() {
+        let path = root.join(".skill-lock.json");
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!("读取 agents lock 文件失败 ({}): {}", path.display(), e);
+                }
+                continue;
             }
-            return HashMap::new();
-        }
-    };
-    let lock: AgentsLockFile = match serde_json::from_str(&content) {
-        Ok(l) => l,
-        Err(e) => {
-            log::warn!("解析 agents lock 文件失败 ({}): {}", path.display(), e);
-            return HashMap::new();
-        }
-    };
-    let parsed: HashMap<String, LockRepoInfo> = lock
-        .skills
-        .into_iter()
-        .filter_map(|(name, skill)| {
-            let source = skill.source?;
+        };
+
+        let lock: AgentsLockFile = match serde_json::from_str(&content) {
+            Ok(l) => l,
+            Err(e) => {
+                log::warn!("解析 agents lock 文件失败 ({}): {}", path.display(), e);
+                continue;
+            }
+        };
+
+        parsed_files += 1;
+        for (name, skill) in lock.skills {
+            let Some(source) = skill.source else {
+                continue;
+            };
             if skill.source_type.as_deref() != Some("github") {
-                return None;
+                continue;
             }
-            let (owner, repo) = source.split_once('/')?;
+            let Some((owner, repo)) = source.split_once('/') else {
+                continue;
+            };
             let branch = normalize_optional_branch(skill.branch)
                 .or_else(|| normalize_optional_branch(skill.source_branch))
                 .or_else(|| parse_branch_from_source_url(skill.source_url.as_deref()));
-            Some((
+
+            merged.insert(
                 name,
                 LockRepoInfo {
                     owner: owner.to_string(),
@@ -315,14 +330,20 @@ fn parse_agents_lock() -> HashMap<String, LockRepoInfo> {
                     skill_path: skill.skill_path,
                     branch,
                 },
-            ))
-        })
-        .collect();
-    log::info!(
-        "agents lock 文件解析完成，共识别 {} 个 github skill",
-        parsed.len()
-    );
-    parsed
+            );
+        }
+    }
+
+    if parsed_files == 0 {
+        log::debug!("未找到可用的 agents lock 文件（.agent/.agents）");
+    } else {
+        log::info!(
+            "agents lock 文件解析完成（{} 个文件），共识别 {} 个 github skill",
+            parsed_files,
+            merged.len()
+        );
+    }
+    merged
 }
 
 // ========== SkillService ==========
@@ -2191,6 +2212,33 @@ pub fn migrate_skills_to_ssot(db: &Arc<Database>) -> Result<usize> {
                 .entry(dir_name)
                 .or_default()
                 .set_enabled_for(&app, true);
+        }
+    }
+
+    // 扫描 agent 技能目录（兼容 ~/.agent 与 ~/.agents）
+    if let Some(agent_dir) = get_agents_skills_dir() {
+        if let Ok(entries) = fs::read_dir(&agent_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                if dir_name.starts_with('.') {
+                    continue;
+                }
+
+                let ssot_path = ssot_dir.join(&dir_name);
+                if !ssot_path.exists() {
+                    SkillService::copy_dir_recursive(&path, &ssot_path)?;
+                }
+
+                discovered
+                    .entry(dir_name)
+                    .or_default()
+                    .set_enabled_for(&AppType::Claude, true);
+            }
         }
     }
 
