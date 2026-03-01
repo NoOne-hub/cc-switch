@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileText } from "lucide-react";
 import { type AppId } from "@/lib/api";
+import { promptsApi } from "@/lib/api/prompts";
 import { usePromptActions } from "@/hooks/usePromptActions";
 import PromptListItem from "./PromptListItem";
 import PromptFormPanel from "./PromptFormPanel";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { Switch } from "@/components/ui/switch";
 
 interface PromptPanelProps {
   open: boolean;
@@ -29,6 +31,7 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
       messageParams?: Record<string, unknown>;
       onConfirm: () => void;
     } | null>(null);
+    const [sharedMode, setSharedMode] = useState(false);
 
     const {
       prompts,
@@ -42,6 +45,14 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
     useEffect(() => {
       if (open) reload();
     }, [open, reload]);
+
+    useEffect(() => {
+      if (!open) return;
+      promptsApi
+        .getSharedMode()
+        .then((enabled) => setSharedMode(enabled))
+        .catch(() => setSharedMode(false));
+    }, [open]);
 
     // Listen for prompt import events from deep link
     useEffect(() => {
@@ -95,14 +106,35 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
 
     const enabledPrompt = promptEntries.find(([_, p]) => p.enabled);
 
+    const handleToggleSharedMode = async (enabled: boolean) => {
+      try {
+        await promptsApi.setSharedMode(enabled);
+        setSharedMode(enabled);
+        await reload();
+      } catch {
+        // keep previous state on failure
+      }
+    };
+
     return (
       <div className="flex flex-col h-[calc(100vh-8rem)] px-6">
         <div className="flex-shrink-0 py-4 glass rounded-xl border border-white/10 mb-4 px-6">
-          <div className="text-sm text-muted-foreground">
-            {t("prompts.count", { count: promptEntries.length })} ·{" "}
-            {enabledPrompt
-              ? t("prompts.enabledName", { name: enabledPrompt[1].name })
-              : t("prompts.noneEnabled")}
+          <div className="flex items-center justify-between gap-4">
+            <div className="text-sm text-muted-foreground">
+              {t("prompts.count", { count: promptEntries.length })} ·{" "}
+              {enabledPrompt
+                ? t("prompts.enabledName", { name: enabledPrompt[1].name })
+                : t("prompts.noneEnabled")}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                {t("prompts.sharedMode", { defaultValue: "共享提示词模式" })}
+              </span>
+              <Switch
+                checked={sharedMode}
+                onCheckedChange={handleToggleSharedMode}
+              />
+            </div>
           </div>
         </div>
 

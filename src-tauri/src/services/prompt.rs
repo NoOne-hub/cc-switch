@@ -18,11 +18,59 @@ fn get_unix_timestamp() -> Result<i64, AppError> {
 pub struct PromptService;
 
 impl PromptService {
+    const SHARED_MODE_KEY: &'static str = "prompt_shared_mode";
+    const SHARED_SCOPE_KEY: &'static str = "__shared__";
+
+    fn is_shared_mode(state: &AppState) -> bool {
+        match state.db.get_setting(Self::SHARED_MODE_KEY) {
+            Ok(Some(v)) => {
+                let normalized = v.trim().to_ascii_lowercase();
+                normalized == "true" || normalized == "1" || normalized == "yes"
+            }
+            _ => false,
+        }
+    }
+
+    fn prompt_scope_key(state: &AppState, app: &AppType) -> String {
+        if Self::is_shared_mode(state) {
+            Self::SHARED_SCOPE_KEY.to_string()
+        } else {
+            app.as_str().to_string()
+        }
+    }
+
+    fn write_target_apps(state: &AppState, app: &AppType) -> Vec<AppType> {
+        if Self::is_shared_mode(state) {
+            AppType::all().collect()
+        } else {
+            vec![app.clone()]
+        }
+    }
+
+    fn write_prompt_to_targets(content: &str, targets: &[AppType]) -> Result<(), AppError> {
+        for target in targets {
+            let path = prompt_file_path(target)?;
+            write_text_file(&path, content)?;
+        }
+        Ok(())
+    }
+
+    fn clear_prompt_for_targets(targets: &[AppType]) -> Result<(), AppError> {
+        for target in targets {
+            let path = prompt_file_path(target)?;
+            if path.exists() {
+                write_text_file(&path, "")?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn get_prompts(
         state: &AppState,
         app: AppType,
     ) -> Result<IndexMap<String, Prompt>, AppError> {
-        state.db.get_prompts(app.as_str())
+        let scope = Self::prompt_scope_key(state, &app);
+        state.db.get_prompts(&scope)
     }
 
     pub fn upsert_prompt(
@@ -31,26 +79,24 @@ impl PromptService {
         _id: &str,
         prompt: Prompt,
     ) -> Result<(), AppError> {
+        let scope = Self::prompt_scope_key(state, &app);
+        let target_apps = Self::write_target_apps(state, &app);
         // 检查是否为已启用的提示词
         let is_enabled = prompt.enabled;
 
-        state.db.save_prompt(app.as_str(), &prompt)?;
+        state.db.save_prompt(&scope, &prompt)?;
 
         if is_enabled {
             // 启用提示词：写入内容到文件
-            let target_path = prompt_file_path(&app)?;
-            write_text_file(&target_path, &prompt.content)?;
+            Self::write_prompt_to_targets(&prompt.content, &target_apps)?;
         } else {
             // 禁用提示词：检查是否还有其他已启用的提示词
-            let prompts = state.db.get_prompts(app.as_str())?;
+            let prompts = state.db.get_prompts(&scope)?;
             let any_enabled = prompts.values().any(|p| p.enabled);
 
             if !any_enabled {
                 // 所有提示词都已禁用，清空文件
-                let target_path = prompt_file_path(&app)?;
-                if target_path.exists() {
-                    write_text_file(&target_path, "")?;
-                }
+                Self::clear_prompt_for_targets(&target_apps)?;
             }
         }
 
@@ -58,7 +104,8 @@ impl PromptService {
     }
 
     pub fn delete_prompt(state: &AppState, app: AppType, id: &str) -> Result<(), AppError> {
-        let prompts = state.db.get_prompts(app.as_str())?;
+        let scope = Self::prompt_scope_key(state, &app);
+        let prompts = state.db.get_prompts(&scope)?;
 
         if let Some(prompt) = prompts.get(id) {
             if prompt.enabled {
@@ -66,17 +113,20 @@ impl PromptService {
             }
         }
 
-        state.db.delete_prompt(app.as_str(), id)?;
+        state.db.delete_prompt(&scope, id)?;
         Ok(())
     }
 
     pub fn enable_prompt(state: &AppState, app: AppType, id: &str) -> Result<(), AppError> {
+        let scope = Self::prompt_scope_key(state, &app);
+        let target_apps = Self::write_target_apps(state, &app);
+
         // 回填当前 live 文件内容到已启用的提示词，或创建备份
         let target_path = prompt_file_path(&app)?;
         if target_path.exists() {
             if let Ok(live_content) = std::fs::read_to_string(&target_path) {
                 if !live_content.trim().is_empty() {
-                    let mut prompts = state.db.get_prompts(app.as_str())?;
+                    let mut prompts = state.db.get_prompts(&scope)?;
 
                     // 尝试回填到当前已启用的提示词
                     if let Some((enabled_id, enabled_prompt)) = prompts
@@ -88,7 +138,7 @@ impl PromptService {
                         enabled_prompt.content = live_content.clone();
                         enabled_prompt.updated_at = Some(timestamp);
                         log::info!("回填 live 提示词内容到已启用项: {enabled_id}");
-                        state.db.save_prompt(app.as_str(), enabled_prompt)?;
+                        state.db.save_prompt(&scope, enabled_prompt)?;
                     } else {
                         // 没有已启用的提示词，则创建一次备份（避免重复备份）
                         let content_exists = prompts
@@ -113,7 +163,7 @@ impl PromptService {
                                 updated_at: Some(timestamp),
                             };
                             log::info!("回填 live 提示词内容，创建备份: {backup_id}");
-                            state.db.save_prompt(app.as_str(), &backup_prompt)?;
+                            state.db.save_prompt(&scope, &backup_prompt)?;
                         }
                     }
                 }
@@ -121,7 +171,7 @@ impl PromptService {
         }
 
         // 启用目标提示词并写入文件
-        let mut prompts = state.db.get_prompts(app.as_str())?;
+        let mut prompts = state.db.get_prompts(&scope)?;
 
         for prompt in prompts.values_mut() {
             prompt.enabled = false;
@@ -129,21 +179,22 @@ impl PromptService {
 
         if let Some(prompt) = prompts.get_mut(id) {
             prompt.enabled = true;
-            write_text_file(&target_path, &prompt.content)?; // 原子写入
-            state.db.save_prompt(app.as_str(), prompt)?;
+            Self::write_prompt_to_targets(&prompt.content, &target_apps)?;
+            state.db.save_prompt(&scope, prompt)?;
         } else {
             return Err(AppError::InvalidInput(format!("提示词 {id} 不存在")));
         }
 
         // Save all prompts to disable others
         for (_, prompt) in prompts.iter() {
-            state.db.save_prompt(app.as_str(), prompt)?;
+            state.db.save_prompt(&scope, prompt)?;
         }
 
         Ok(())
     }
 
     pub fn import_from_file(state: &AppState, app: AppType) -> Result<String, AppError> {
+        let scope = Self::prompt_scope_key(state, &app);
         let file_path = prompt_file_path(&app)?;
 
         if !file_path.exists() {
@@ -168,7 +219,7 @@ impl PromptService {
             updated_at: Some(timestamp),
         };
 
-        Self::upsert_prompt(state, app, &id, prompt)?;
+        state.db.save_prompt(&scope, &prompt)?;
         Ok(id)
     }
 

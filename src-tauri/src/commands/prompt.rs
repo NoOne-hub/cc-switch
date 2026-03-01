@@ -62,3 +62,24 @@ pub async fn get_current_prompt_file_content(app: String) -> Result<Option<Strin
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     PromptService::get_current_file_content(app_type).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn get_prompt_shared_mode(state: State<'_, AppState>) -> Result<bool, String> {
+    let value = state
+        .db
+        .get_setting("prompt_shared_mode")
+        .map_err(|e| e.to_string())?;
+    Ok(matches!(
+        value.as_deref(),
+        Some("true") | Some("1") | Some("yes") | Some("TRUE") | Some("YES")
+    ))
+}
+
+#[tauri::command]
+pub fn set_prompt_shared_mode(enabled: bool, state: State<'_, AppState>) -> Result<bool, String> {
+    state
+        .db
+        .set_setting("prompt_shared_mode", if enabled { "true" } else { "false" })
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}

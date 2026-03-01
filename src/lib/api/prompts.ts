@@ -35,4 +35,12 @@ export const promptsApi = {
   async getCurrentFileContent(app: AppId): Promise<string | null> {
     return await invoke("get_current_prompt_file_content", { app });
   },
+
+  async getSharedMode(): Promise<boolean> {
+    return await invoke("get_prompt_shared_mode");
+  },
+
+  async setSharedMode(enabled: boolean): Promise<boolean> {
+    return await invoke("set_prompt_shared_mode", { enabled });
+  },
 };
