@@ -94,7 +94,9 @@ interface WebDavSyncStatusUpdatedPayload {
   error?: string;
 }
 
-const DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28; // px
+// Keep a dedicated top drag strip on Linux so native window controls
+// (min/max/close) are not overlapped by webview content.
+const DRAG_BAR_HEIGHT = isWindows() ? 0 : isLinux() ? 32 : 28; // px
 const HEADER_HEIGHT = 64; // px
 const CONTENT_TOP_OFFSET = DRAG_BAR_HEIGHT + HEADER_HEIGHT;
 
@@ -878,7 +880,12 @@ function App() {
         <div
           className="flex h-full items-center justify-between gap-2 px-6"
           data-tauri-drag-region
-          style={{ WebkitAppRegion: "drag" } as any}
+          style={
+            {
+              WebkitAppRegion: "drag",
+              paddingRight: isLinux() ? "112px" : undefined,
+            } as any
+          }
         >
           <div
             className="flex items-center gap-1"
