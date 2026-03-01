@@ -258,15 +258,6 @@ pub fn run() {
             app_store::refresh_app_config_dir_override(app.handle());
             panic_hook::init_app_config_dir(crate::config::get_app_config_dir());
 
-            #[cfg(target_os = "linux")]
-            {
-                if let Some(window) = app.get_webview_window("main") {
-                    if let Err(err) = window.set_decorations(false) {
-                        log::warn!("Linux 隐藏系统窗口装饰失败: {err}");
-                    }
-                }
-            }
-
             // 注册 Updater 插件（桌面端）
             #[cfg(desktop)]
             {
