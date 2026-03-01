@@ -5,6 +5,7 @@
 mod endpoints;
 mod gemini_auth;
 mod live;
+mod models;
 mod usage;
 
 use indexmap::IndexMap;
@@ -24,6 +25,7 @@ pub use live::{
     import_default_config, import_openclaw_providers_from_live,
     import_opencode_providers_from_live, read_live_settings, sync_current_to_live,
 };
+pub use models::FetchOpenAiModelsResponse;
 
 // Internal re-exports (pub(crate))
 pub(crate) use live::sanitize_claude_settings_for_live;
@@ -917,6 +919,25 @@ impl ProviderService {
             access_token,
             user_id,
             template_type,
+        )
+        .await
+    }
+
+    pub async fn fetch_openai_models(
+        state: &AppState,
+        app_type: AppType,
+        provider_id: Option<&str>,
+        base_url: &str,
+        api_key: &str,
+        timeout_secs: Option<u64>,
+    ) -> Result<FetchOpenAiModelsResponse, AppError> {
+        models::fetch_openai_models(
+            state,
+            app_type,
+            provider_id,
+            base_url,
+            api_key,
+            timeout_secs,
         )
         .await
     }

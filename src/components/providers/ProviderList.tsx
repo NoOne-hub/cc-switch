@@ -21,6 +21,7 @@ import type { Provider } from "@/types";
 import type { AppId } from "@/lib/api";
 import { providersApi } from "@/lib/api/providers";
 import { useDragSort } from "@/hooks/useDragSort";
+import { useStreamCheck } from "@/hooks/useStreamCheck";
 import {
   useOpenClawLiveProviderIds,
   useOpenClawDefaultModel,
@@ -102,6 +103,9 @@ export function ProviderList({
     appId === "openclaw",
   );
 
+  // 流式健康检查
+  const { checkProvider, isChecking } = useStreamCheck(appId);
+
   // 判断供应商是否已添加到配置（累加模式应用：OpenCode/OpenClaw）
   const isProviderInConfig = useCallback(
     (providerId: string): boolean => {
@@ -171,6 +175,10 @@ export function ProviderList({
     },
     [appId, addToQueue, removeFromQueue],
   );
+
+  const handleTest = (provider: Provider) => {
+    checkProvider(provider.id, provider.name);
+  };
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -306,7 +314,8 @@ export function ProviderList({
                 onConfigureUsage={onConfigureUsage}
                 onOpenWebsite={onOpenWebsite}
                 onOpenTerminal={onOpenTerminal}
-                isTesting={false} // isChecking(provider.id) - 测试功能已隐藏
+                onTest={appId !== "opencode" ? handleTest : undefined}
+                isTesting={isChecking(provider.id)}
                 isProxyRunning={isProxyRunning}
                 isProxyTakeover={isProxyTakeover}
                 isAutoFailoverEnabled={isFailoverModeActive}
