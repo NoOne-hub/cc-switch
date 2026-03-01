@@ -372,12 +372,13 @@ const UnifiedSkillsPanel = React.forwardRef<
   );
 
   return (
-    <div className="px-6 flex flex-col h-[calc(100vh-8rem)] overflow-hidden">
-      <AppCountBar
-        totalLabel={t("skills.installed", { count: skills?.length || 0 })}
-        counts={enabledCounts}
-        appIds={MCP_SKILLS_APP_IDS}
-      />
+    <TooltipProvider delayDuration={300}>
+      <div className="px-6 flex flex-col h-[calc(100vh-8rem)] overflow-hidden">
+        <AppCountBar
+          totalLabel={t("skills.installed", { count: skills?.length || 0 })}
+          counts={enabledCounts}
+          appIds={MCP_SKILLS_APP_IDS}
+        />
 
       <div className="flex-shrink-0 mb-3 rounded-xl border border-border-default bg-background/60 p-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -444,25 +445,24 @@ const UnifiedSkillsPanel = React.forwardRef<
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden pb-24">
-        {isLoading ? (
-          <div className="text-center py-12 text-muted-foreground">
-            {t("skills.loading")}
-          </div>
-        ) : !normalizedSkills || normalizedSkills.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 mx-auto mb-4 bg-muted rounded-full flex items-center justify-center">
-              <Sparkles size={24} className="text-muted-foreground" />
+        <div className="flex-1 overflow-y-auto overflow-x-hidden pb-24">
+          {isLoading ? (
+            <div className="text-center py-12 text-muted-foreground">
+              {t("skills.loading")}
             </div>
-            <h3 className="text-lg font-medium text-foreground mb-2">
-              {t("skills.noInstalled")}
-            </h3>
-            <p className="text-muted-foreground text-sm">
-              {t("skills.noInstalledDescription")}
-            </p>
-          </div>
-        ) : (
-          <TooltipProvider delayDuration={300}>
+          ) : !normalizedSkills || normalizedSkills.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 mx-auto mb-4 bg-muted rounded-full flex items-center justify-center">
+                <Sparkles size={24} className="text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-medium text-foreground mb-2">
+                {t("skills.noInstalled")}
+              </h3>
+              <p className="text-muted-foreground text-sm">
+                {t("skills.noInstalledDescription")}
+              </p>
+            </div>
+          ) : (
             <div className="rounded-xl border border-border-default overflow-hidden">
               {normalizedSkills.map((skill, index) => (
                 <InstalledSkillListItem
@@ -478,28 +478,28 @@ const UnifiedSkillsPanel = React.forwardRef<
                 />
               ))}
             </div>
-          </TooltipProvider>
+          )}
+        </div>
+
+        {confirmDialog && (
+          <ConfirmDialog
+            isOpen={confirmDialog.isOpen}
+            title={confirmDialog.title}
+            message={confirmDialog.message}
+            onConfirm={confirmDialog.onConfirm}
+            onCancel={() => setConfirmDialog(null)}
+          />
+        )}
+
+        {importDialogOpen && unmanagedSkills && (
+          <ImportSkillsDialog
+            skills={unmanagedSkills}
+            onImport={handleImport}
+            onClose={() => setImportDialogOpen(false)}
+          />
         )}
       </div>
-
-      {confirmDialog && (
-        <ConfirmDialog
-          isOpen={confirmDialog.isOpen}
-          title={confirmDialog.title}
-          message={confirmDialog.message}
-          onConfirm={confirmDialog.onConfirm}
-          onCancel={() => setConfirmDialog(null)}
-        />
-      )}
-
-      {importDialogOpen && unmanagedSkills && (
-        <ImportSkillsDialog
-          skills={unmanagedSkills}
-          onImport={handleImport}
-          onClose={() => setImportDialogOpen(false)}
-        />
-      )}
-    </div>
+    </TooltipProvider>
   );
 });
 
