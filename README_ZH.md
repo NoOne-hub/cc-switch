@@ -13,6 +13,21 @@
 
 </div>
 
+## 与上游官方版本的差异
+
+本仓库会持续跟进上游 `farion1231/cc-switch`，并额外维护以下增强：
+
+- 提示词支持**共享模式**：可跨 Claude/Codex/Gemini/OpenCode/OpenClaw 共用同一套提示词。
+- Skills 支持**GitHub 链接直接导入**（repo / tree / SKILL.md 链接）。
+- Skills 支持**本地目录导入**（保留 ZIP 导入）。
+- Skills 页增强去重体验：已存在的技能可提前识别，减少重复安装/重复副本。
+- Provider 表单增强：支持 OpenAI 兼容接口模型拉取建议与相关交互优化。
+- Linux 托盘交互调整为左键切换主窗口。
+
+维护策略：
+
+- 定期同步上游，fork 特性按独立提交维护，便于后续 `cherry-pick` / rebase。
+
 ## ❤️赞助商
 
 [![MiniMax](assets/partners/banners/minimax-zh.jpeg)](https://platform.minimaxi.com/subscribe/coding-plan?code=7kYF2VoaCn&source=link)

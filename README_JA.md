@@ -13,6 +13,21 @@
 
 </div>
 
+## 公式版（upstream）との差分
+
+このフォークは upstream `farion1231/cc-switch` を継続追従しつつ、以下の拡張を含みます。
+
+- プロンプトの**共有モード**：Claude/Codex/Gemini/OpenCode/OpenClaw で同一プロンプトセットを共有可能。
+- Skills の**GitHub URL 直接インポート**（repo / tree / SKILL.md リンクに対応）。
+- Skills の**ローカルディレクトリインポート**（ZIP インポートに加えて対応）。
+- Skills 画面の重複判定を改善（既存スキルを事前表示し、重複作成を抑制）。
+- Provider フォームを拡張（OpenAI 互換 API のモデル取得サジェスト等）。
+- Linux トレイ動作を左クリックでメインウィンドウ切替に調整。
+
+運用方針：
+
+- upstream は定期同期し、フォーク独自機能は独立コミットで管理（`cherry-pick` / rebase を容易化）。
+
 ## ❤️スポンサー
 
 [![MiniMax](assets/partners/banners/minimax-en.jpeg)](https://platform.minimax.io/subscribe/coding-plan?code=ClLhgxr2je&source=link)
