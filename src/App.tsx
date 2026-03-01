@@ -932,9 +932,6 @@ function App() {
           style={
             {
               WebkitAppRegion: "drag",
-              // Linux + overlay titlebar: keep a right-side safe zone so native
-              // window buttons are never covered by web content hit-testing.
-              paddingRight: isLinux() ? "108px" : undefined,
             } as any
           }
         >
