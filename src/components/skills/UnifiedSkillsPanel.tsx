@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Sparkles, Trash2, ExternalLink } from "lucide-react";
+import { Sparkles, Trash2, ExternalLink, CheckSquare, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -20,6 +20,7 @@ import { MCP_SKILLS_APP_IDS } from "@/config/appConfig";
 import { AppCountBar } from "@/components/common/AppCountBar";
 import { AppToggleGroup } from "@/components/common/AppToggleGroup";
 import { ListItemRow } from "@/components/common/ListItemRow";
+import { buildBatchToggleOps } from "@/components/skills/bulkOps";
 
 interface UnifiedSkillsPanelProps {
   onOpenDiscovery: () => void;
@@ -46,6 +47,13 @@ const UnifiedSkillsPanel = React.forwardRef<
     onConfirm: () => void;
   } | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [batchTargetApps, setBatchTargetApps] = useState<Set<AppId>>(
+    new Set(MCP_SKILLS_APP_IDS),
+  );
+  const [batchBusy, setBatchBusy] = useState(false);
 
   const { data: skills, isLoading, refetch: refetchInstalled } =
     useInstalledSkills();
@@ -66,12 +74,89 @@ const UnifiedSkillsPanel = React.forwardRef<
     });
     return counts;
   }, [skills]);
+  const selectedCount = selectedSkillIds.size;
 
   const handleToggleApp = async (id: string, app: AppId, enabled: boolean) => {
     try {
       await toggleAppMutation.mutateAsync({ id, app, enabled });
     } catch (error) {
       toast.error(t("common.error"), { description: String(error) });
+    }
+  };
+
+  const toggleSkillSelection = (id: string, selected: boolean) => {
+    setSelectedSkillIds((prev) => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (!skills || skills.length === 0) return;
+    setSelectedSkillIds(new Set(skills.map((s) => s.id)));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedSkillIds(new Set());
+  };
+
+  const toggleBatchTargetApp = (app: AppId, enabled: boolean) => {
+    setBatchTargetApps((prev) => {
+      const next = new Set(prev);
+      if (enabled) {
+        next.add(app);
+      } else {
+        next.delete(app);
+      }
+      return next;
+    });
+  };
+
+  const handleBatchToggle = async (enabled: boolean) => {
+    if (selectedSkillIds.size === 0 || batchTargetApps.size === 0) return;
+    const ops = buildBatchToggleOps(
+      Array.from(selectedSkillIds),
+      Array.from(batchTargetApps),
+      enabled,
+    );
+
+    setBatchBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        ops.map((op) => skillsApi.toggleApp(op.id, op.app, op.enabled)),
+      );
+      const successCount = results.filter((r) => r.status === "fulfilled").length;
+      const failedCount = results.length - successCount;
+
+      if (failedCount === 0) {
+        toast.success(
+          t("skills.batchToggleSuccess", {
+            defaultValue: "批量操作成功：{{count}} 项",
+            count: successCount,
+          }),
+          { closeButton: true },
+        );
+      } else {
+        toast.warning(
+          t("skills.batchTogglePartial", {
+            defaultValue: "批量操作完成：成功 {{ok}}，失败 {{fail}}",
+            ok: successCount,
+            fail: failedCount,
+          }),
+          { closeButton: true },
+        );
+      }
+
+      await refetchInstalled();
+    } catch (error) {
+      toast.error(t("common.error"), { description: String(error) });
+    } finally {
+      setBatchBusy(false);
     }
   };
 
@@ -89,6 +174,56 @@ const UnifiedSkillsPanel = React.forwardRef<
           });
         } catch (error) {
           toast.error(t("common.error"), { description: String(error) });
+        }
+      },
+    });
+  };
+
+  const handleBatchUninstall = () => {
+    if (!skills || selectedSkillIds.size === 0) return;
+    const selected = skills.filter((s) => selectedSkillIds.has(s.id));
+
+    setConfirmDialog({
+      isOpen: true,
+      title: t("skills.batchUninstall", { defaultValue: "批量卸载" }),
+      message: t("skills.batchUninstallConfirm", {
+        defaultValue: "确认卸载已选中的 {{count}} 个 Skills？",
+        count: selected.length,
+      }),
+      onConfirm: async () => {
+        setBatchBusy(true);
+        try {
+          const results = await Promise.allSettled(
+            selected.map((s) => uninstallMutation.mutateAsync(s.id)),
+          );
+          const successCount = results.filter((r) => r.status === "fulfilled").length;
+          const failedCount = results.length - successCount;
+
+          setConfirmDialog(null);
+          setSelectedSkillIds(new Set());
+
+          if (failedCount === 0) {
+            toast.success(
+              t("skills.batchUninstallSuccess", {
+                defaultValue: "批量卸载成功：{{count}} 个",
+                count: successCount,
+              }),
+              { closeButton: true },
+            );
+          } else {
+            toast.warning(
+              t("skills.batchUninstallPartial", {
+                defaultValue: "批量卸载完成：成功 {{ok}}，失败 {{fail}}",
+                ok: successCount,
+                fail: failedCount,
+              }),
+              { closeButton: true },
+            );
+          }
+        } catch (error) {
+          toast.error(t("common.error"), { description: String(error) });
+        } finally {
+          setBatchBusy(false);
         }
       },
     });
@@ -211,6 +346,17 @@ const UnifiedSkillsPanel = React.forwardRef<
     openInstallFromLocal: handleInstallFromLocal,
   }));
 
+  const batchTargetState = useMemo(
+    () => ({
+      claude: batchTargetApps.has("claude"),
+      codex: batchTargetApps.has("codex"),
+      gemini: batchTargetApps.has("gemini"),
+      opencode: batchTargetApps.has("opencode"),
+      openclaw: false,
+    }),
+    [batchTargetApps],
+  );
+
   return (
     <div className="px-6 flex flex-col h-[calc(100vh-8rem)] overflow-hidden">
       <AppCountBar
@@ -218,6 +364,71 @@ const UnifiedSkillsPanel = React.forwardRef<
         counts={enabledCounts}
         appIds={MCP_SKILLS_APP_IDS}
       />
+
+      <div className="flex-shrink-0 mb-3 rounded-xl border border-border-default bg-background/60 p-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSelectAll}
+            disabled={!skills || skills.length === 0 || batchBusy}
+          >
+            <CheckSquare className="w-3.5 h-3.5 mr-1.5" />
+            {t("skills.selectAll", { defaultValue: "全选" })}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClearSelection}
+            disabled={selectedCount === 0 || batchBusy}
+          >
+            <Square className="w-3.5 h-3.5 mr-1.5" />
+            {t("skills.clearSelection", { defaultValue: "清空选择" })}
+          </Button>
+          <span className="text-xs text-muted-foreground ml-1">
+            {t("skills.selectedCount", {
+              defaultValue: "已选 {{count}} 项",
+              count: selectedCount,
+            })}
+          </span>
+        </div>
+
+        <div className="mt-2 flex items-center gap-3 flex-wrap">
+          <span className="text-xs text-muted-foreground">
+            {t("skills.batchTargetApps", { defaultValue: "批量目标客户端" })}
+          </span>
+          <AppToggleGroup
+            apps={batchTargetState}
+            onToggle={toggleBatchTargetApp}
+            appIds={MCP_SKILLS_APP_IDS}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleBatchToggle(true)}
+            disabled={selectedCount === 0 || batchTargetApps.size === 0 || batchBusy}
+          >
+            {t("skills.batchEnable", { defaultValue: "批量启用" })}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleBatchToggle(false)}
+            disabled={selectedCount === 0 || batchTargetApps.size === 0 || batchBusy}
+          >
+            {t("skills.batchDisable", { defaultValue: "批量禁用" })}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-red-600 hover:text-red-700"
+            onClick={handleBatchUninstall}
+            disabled={selectedCount === 0 || batchBusy}
+          >
+            {t("skills.batchUninstall", { defaultValue: "批量卸载" })}
+          </Button>
+        </div>
+      </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden pb-24">
         {isLoading ? (
@@ -245,6 +456,10 @@ const UnifiedSkillsPanel = React.forwardRef<
                   skill={skill}
                   onToggleApp={handleToggleApp}
                   onUninstall={() => handleUninstall(skill)}
+                  selected={selectedSkillIds.has(skill.id)}
+                  onSelectChange={(selected) =>
+                    toggleSkillSelection(skill.id, selected)
+                  }
                   isLast={index === skills.length - 1}
                 />
               ))}
@@ -280,6 +495,8 @@ interface InstalledSkillListItemProps {
   skill: InstalledSkill;
   onToggleApp: (id: string, app: AppId, enabled: boolean) => void;
   onUninstall: () => void;
+  selected: boolean;
+  onSelectChange: (selected: boolean) => void;
   isLast?: boolean;
 }
 
@@ -287,6 +504,8 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   skill,
   onToggleApp,
   onUninstall,
+  selected,
+  onSelectChange,
   isLast,
 }) => {
   const { t } = useTranslation();
@@ -309,6 +528,14 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
 
   return (
     <ListItemRow isLast={isLast}>
+      <div className="flex-shrink-0">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(e) => onSelectChange(e.target.checked)}
+          className="h-4 w-4"
+        />
+      </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="font-medium text-sm text-foreground truncate">
