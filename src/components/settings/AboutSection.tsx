@@ -288,15 +288,17 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
       return;
     }
 
-    try {
-      const available = await checkUpdate();
-      if (!available) {
-        toast.success(t("settings.upToDate"), { closeButton: true });
-      }
-    } catch (error) {
-      console.error("[AboutSection] Check update failed", error);
-      toast.error(t("settings.checkUpdateFailed"));
-    }
+    // 非阻塞检查：点击后立即返回，不阻塞窗口交互/退出流程。
+    void checkUpdate()
+      .then((available) => {
+        if (!available) {
+          toast.success(t("settings.upToDate"), { closeButton: true });
+        }
+      })
+      .catch((error) => {
+        console.error("[AboutSection] Check update failed", error);
+        toast.error(t("settings.checkUpdateFailed"));
+      });
   }, [checkUpdate, hasUpdate, isPortable, resetDismiss, t, updateHandle]);
 
   const handleCopyInstallCommands = useCallback(async () => {
