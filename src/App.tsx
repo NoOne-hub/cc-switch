@@ -882,7 +882,10 @@ function App() {
 
   return (
     <div
-      className="flex flex-col h-screen overflow-hidden bg-background text-foreground selection:bg-primary/30"
+      className={cn(
+        "flex flex-col h-screen overflow-hidden bg-background text-foreground selection:bg-primary/30",
+        isLinux() && "shadow-[inset_0_0_0_1px_hsl(var(--border))]",
+      )}
       style={{ overflowX: "hidden", paddingTop: CONTENT_TOP_OFFSET }}
     >
       <div
