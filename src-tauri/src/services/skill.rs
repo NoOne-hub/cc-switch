@@ -940,6 +940,30 @@ impl SkillService {
         crate::settings::get_skill_sync_method()
     }
 
+    /// 在已知目录中查找 skill 源目录（用于 SSOT 缺失时恢复）
+    fn find_skill_source_in_known_dirs(directory: &str, ssot_dir: &Path) -> Option<PathBuf> {
+        let mut candidates: Vec<PathBuf> = Vec::new();
+
+        for app in AppType::all() {
+            if let Ok(d) = Self::get_app_skills_dir(&app) {
+                candidates.push(d.join(directory));
+            }
+        }
+        if let Some(agents_dir) = get_agents_skills_dir() {
+            candidates.push(agents_dir.join(directory));
+        }
+
+        for candidate in candidates {
+            if candidate == ssot_dir.join(directory) {
+                continue;
+            }
+            if candidate.exists() && candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+
     /// 同步 Skill 到应用目录（使用 symlink 或 copy）
     ///
     /// 根据配置和平台选择最佳同步方式：
@@ -952,7 +976,22 @@ impl SkillService {
         let shared_agents_ssot = Self::is_agents_ssot_dir(&ssot_dir);
 
         if !source.exists() {
-            return Err(anyhow!("Skill 不存在于 SSOT: {directory}"));
+            // 旧数据兼容：若 SSOT 缺失，尝试从客户端现有目录恢复到 SSOT
+            if let Some(found) = Self::find_skill_source_in_known_dirs(directory, &ssot_dir) {
+                log::warn!(
+                    "Skill {} 不存在于 SSOT，尝试从 {} 恢复",
+                    directory,
+                    found.display()
+                );
+                Self::copy_dir_recursive(&found, &source)?;
+            }
+        }
+
+        if !source.exists() {
+            return Err(anyhow!(
+                "Skill 不存在于 SSOT 且无法自动恢复: {}。建议在 Skills 页面卸载该旧记录后重新安装。",
+                directory
+            ));
         }
 
         let app_dir = Self::get_app_skills_dir(app)?;

@@ -9,6 +9,7 @@ import type { Prompt, AppId } from "@/lib/api";
 
 interface PromptFormPanelProps {
   appId: AppId;
+  sharedMode?: boolean;
   editingId?: string;
   initialData?: Prompt;
   onSave: (id: string, prompt: Prompt) => Promise<void>;
@@ -17,13 +18,16 @@ interface PromptFormPanelProps {
 
 const PromptFormPanel: React.FC<PromptFormPanelProps> = ({
   appId,
+  sharedMode = false,
   editingId,
   initialData,
   onSave,
   onClose,
 }) => {
   const { t } = useTranslation();
-  const appName = t(`apps.${appId}`);
+  const appName = sharedMode
+    ? t("prompts.sharedLabel", { defaultValue: "共享提示词" })
+    : t(`apps.${appId}`);
   const filenameMap: Record<AppId, string> = {
     claude: "CLAUDE.md",
     codex: "AGENTS.md",
@@ -31,7 +35,9 @@ const PromptFormPanel: React.FC<PromptFormPanelProps> = ({
     opencode: "AGENTS.md",
     openclaw: "AGENTS.md",
   };
-  const filename = filenameMap[appId];
+  const filename = sharedMode
+    ? "CLAUDE.md / AGENTS.md / GEMINI.md"
+    : filenameMap[appId];
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");

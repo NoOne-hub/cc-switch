@@ -7,7 +7,6 @@ import { usePromptActions } from "@/hooks/usePromptActions";
 import PromptListItem from "./PromptListItem";
 import PromptFormPanel from "./PromptFormPanel";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { Switch } from "@/components/ui/switch";
 
 interface PromptPanelProps {
   open: boolean;
@@ -20,7 +19,7 @@ export interface PromptPanelHandle {
 }
 
 const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
-  ({ open, appId }, ref) => {
+  ({ open }, ref) => {
     const { t } = useTranslation();
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -32,6 +31,7 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
       onConfirm: () => void;
     } | null>(null);
     const [sharedMode, setSharedMode] = useState(true);
+    const effectiveAppId: AppId = "claude";
 
     const {
       prompts,
@@ -40,7 +40,7 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
       savePrompt,
       deletePrompt,
       toggleEnabled,
-    } = usePromptActions(appId);
+    } = usePromptActions(effectiveAppId);
 
     useEffect(() => {
       if (open) reload();
@@ -48,9 +48,13 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
 
     useEffect(() => {
       if (!open) return;
+      // 统一提示词模式：始终启用共享模式（单一数据源）
       promptsApi
-        .getSharedMode()
-        .then((enabled) => setSharedMode(enabled))
+        .setSharedMode(true)
+        .then(() => {
+          setSharedMode(true);
+          return reload();
+        })
         .catch(() => setSharedMode(true));
     }, [open]);
 
@@ -58,17 +62,15 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
     useEffect(() => {
       const handlePromptImported = (event: Event) => {
         const customEvent = event as CustomEvent;
-        // Reload if the import is for this app
-        if (customEvent.detail?.app === appId) {
-          reload();
-        }
+        // 共享模式下导入任意 app prompt 都需要刷新
+        if (customEvent.detail?.app) reload();
       };
 
       window.addEventListener("prompt-imported", handlePromptImported);
       return () => {
         window.removeEventListener("prompt-imported", handlePromptImported);
       };
-    }, [appId, reload]);
+    }, [reload]);
 
     const handleAdd = () => {
       setEditingId(null);
@@ -106,16 +108,6 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
 
     const enabledPrompt = promptEntries.find(([_, p]) => p.enabled);
 
-    const handleToggleSharedMode = async (enabled: boolean) => {
-      try {
-        await promptsApi.setSharedMode(enabled);
-        setSharedMode(enabled);
-        await reload();
-      } catch {
-        // keep previous state on failure
-      }
-    };
-
     return (
       <div className="flex flex-col h-[calc(100vh-8rem)] px-6">
         <div className="flex-shrink-0 py-4 glass rounded-xl border border-white/10 mb-4 px-6">
@@ -126,14 +118,9 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
                 ? t("prompts.enabledName", { name: enabledPrompt[1].name })
                 : t("prompts.noneEnabled")}
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>
-                {t("prompts.sharedMode", { defaultValue: "共享提示词模式" })}
-              </span>
-              <Switch
-                checked={sharedMode}
-                onCheckedChange={handleToggleSharedMode}
-              />
+            <div className="text-xs text-muted-foreground">
+              {t("prompts.sharedMode", { defaultValue: "共享提示词模式" })}:{" "}
+              {sharedMode ? "ON" : "OFF"}
             </div>
           </div>
         </div>
@@ -173,7 +160,8 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
 
         {isFormOpen && (
           <PromptFormPanel
-            appId={appId}
+            appId={effectiveAppId}
+            sharedMode={true}
             editingId={editingId || undefined}
             initialData={editingId ? prompts[editingId] : undefined}
             onSave={savePrompt}
