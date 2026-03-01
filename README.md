@@ -13,6 +13,22 @@ English | [中文](README_ZH.md) | [日本語](README_JA.md) | [Changelog](CHANG
 
 </div>
 
+## Fork Differences From Upstream
+
+This fork tracks upstream `farion1231/cc-switch` and adds the following customizations:
+
+- Prompt management supports a **shared mode**: one prompt set can be reused across Claude/Codex/Gemini/OpenCode/OpenClaw instead of maintaining separate copies.
+- Skills management adds **direct GitHub URL import** (repo / tree / SKILL.md links).
+- Skills management adds **local directory import** (in addition to ZIP import).
+- Skills UI includes improved dedupe behavior: already-present skills are recognized and surfaced before repeated install actions.
+- Provider forms include **OpenAI-compatible model fetch suggestions** and related UX enhancements.
+- Linux tray behavior changed to left-click toggle main window.
+
+Maintenance strategy:
+
+- Upstream sync is done regularly, while fork-only changes are kept in isolated commits for easier `cherry-pick`/rebase.
+- See commit history for feature-scoped patches (`feat(prompt)`, `feat(skills)`, `feat(provider)`, `feat(core)`).
+
 ## ❤️Sponsor
 
 [![MiniMax](assets/partners/banners/minimax-en.jpeg)](https://platform.minimax.io/subscribe/coding-plan?code=ClLhgxr2je&source=link)
