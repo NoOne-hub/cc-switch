@@ -63,6 +63,7 @@ import { UniversalProviderPanel } from "@/components/universal";
 import { McpIcon } from "@/components/BrandIcons";
 import { Button } from "@/components/ui/button";
 import { SessionManagerPage } from "@/components/sessions/SessionManagerPage";
+import { PageErrorBoundary } from "@/components/common/PageErrorBoundary";
 import {
   useDisableCurrentOmo,
   useDisableCurrentOmoSlim,
@@ -696,26 +697,30 @@ function App() {
           );
         case "skills":
           return (
-            <UnifiedSkillsPanel
-              ref={unifiedSkillsPanelRef}
-              onOpenDiscovery={() => setCurrentView("skillsDiscovery")}
-              currentApp={
-                activeApp === "opencode" || activeApp === "openclaw"
-                  ? "claude"
-                  : activeApp
-              }
-            />
+            <PageErrorBoundary title="Skills 页面发生错误">
+              <UnifiedSkillsPanel
+                ref={unifiedSkillsPanelRef}
+                onOpenDiscovery={() => setCurrentView("skillsDiscovery")}
+                currentApp={
+                  activeApp === "opencode" || activeApp === "openclaw"
+                    ? "claude"
+                    : activeApp
+                }
+              />
+            </PageErrorBoundary>
           );
         case "skillsDiscovery":
           return (
-            <SkillsPage
-              ref={skillsPageRef}
-              initialApp={
-                activeApp === "opencode" || activeApp === "openclaw"
-                  ? "claude"
-                  : activeApp
-              }
-            />
+            <PageErrorBoundary title="Skills 发现页发生错误">
+              <SkillsPage
+                ref={skillsPageRef}
+                initialApp={
+                  activeApp === "opencode" || activeApp === "openclaw"
+                    ? "claude"
+                    : activeApp
+                }
+              />
+            </PageErrorBoundary>
           );
         case "mcp":
           return (

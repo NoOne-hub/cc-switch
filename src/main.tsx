@@ -9,6 +9,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
 import { queryClient } from "@/lib/query";
 import { Toaster } from "@/components/ui/sonner";
+import { PageErrorBoundary } from "@/components/common/PageErrorBoundary";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "@tauri-apps/plugin-dialog";
@@ -24,6 +25,49 @@ try {
   }
 } catch {
   // 忽略平台检测失败
+}
+
+try {
+  const showRuntimeOverlay = (title: string, detail: string) => {
+    const id = "cc-switch-runtime-error-overlay";
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = id;
+      el.style.position = "fixed";
+      el.style.top = "12px";
+      el.style.left = "12px";
+      el.style.right = "12px";
+      el.style.zIndex = "999999";
+      el.style.background = "rgba(127, 29, 29, 0.95)";
+      el.style.color = "#fff";
+      el.style.border = "1px solid rgba(248, 113, 113, 0.8)";
+      el.style.borderRadius = "10px";
+      el.style.padding = "12px 14px";
+      el.style.fontFamily = "monospace";
+      el.style.fontSize = "12px";
+      el.style.whiteSpace = "pre-wrap";
+      el.style.wordBreak = "break-word";
+      document.body.appendChild(el);
+    }
+    el.textContent = `${title}\n${detail}`;
+  };
+
+  window.addEventListener("error", (event) => {
+    const detail = String(event.error?.stack || event.error || event.message);
+    console.error("[WindowError]", detail);
+    showRuntimeOverlay("Runtime Error", detail);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    const detail = String(
+      (event.reason && (event.reason.stack || event.reason.message)) ||
+        event.reason,
+    );
+    console.error("[UnhandledRejection]", detail);
+    showRuntimeOverlay("Unhandled Rejection", detail);
+  });
+} catch {
+  // ignore
 }
 
 // 配置加载错误payload类型
@@ -91,7 +135,9 @@ async function bootstrap() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider defaultTheme="system" storageKey="cc-switch-theme">
           <UpdateProvider>
-            <App />
+            <PageErrorBoundary title="应用页面发生错误">
+              <App />
+            </PageErrorBoundary>
             <Toaster />
           </UpdateProvider>
         </ThemeProvider>
