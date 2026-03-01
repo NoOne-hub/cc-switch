@@ -47,6 +47,7 @@ pub use services::{
     ConfigService, EndpointLatency, McpService, PromptService, ProviderService, ProxyService,
     SkillService, SpeedtestService,
 };
+pub use services::skill::{SkillSsotMode, SyncMethod};
 pub use settings::{update_settings, AppSettings};
 pub use store::AppState;
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -630,16 +631,21 @@ pub fn run() {
 
             // 构建托盘
             let mut tray_builder = TrayIconBuilder::with_id("main")
-                .on_tray_icon_event(|_tray, event| match event {
-                    // 左键点击已通过 show_menu_on_left_click(true) 打开菜单，这里不再额外处理
-                    TrayIconEvent::Click { .. } => {}
-                    _ => log::debug!("unhandled event {event:?}"),
+                .on_tray_icon_event(|tray, event| match event {
+                    TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } => {
+                        tray::handle_tray_menu_event(tray.app_handle(), "toggle_main");
+                    }
+                    _ => {}
                 })
                 .menu(&menu)
                 .on_menu_event(|app, event| {
                     tray::handle_tray_menu_event(app, &event.id.0);
                 })
-                .show_menu_on_left_click(true);
+                .show_menu_on_left_click(false);
 
             // 使用平台对应的托盘图标（macOS 使用模板图标适配深浅色）
             #[cfg(target_os = "macos")]
@@ -871,8 +877,11 @@ pub fn run() {
             commands::enable_prompt,
             commands::import_prompt_from_file,
             commands::get_current_prompt_file_content,
+            commands::get_prompt_shared_mode,
+            commands::set_prompt_shared_mode,
             // ours: endpoint speed test + custom endpoint management
             commands::test_api_endpoints,
+            commands::fetch_provider_models_openai,
             commands::get_custom_endpoints,
             commands::add_custom_endpoint,
             commands::remove_custom_endpoint,
@@ -928,6 +937,8 @@ pub fn run() {
             commands::add_skill_repo,
             commands::remove_skill_repo,
             commands::install_skills_from_zip,
+            commands::install_skills_from_local_path,
+            commands::install_skill_from_github_url,
             // Auto launch
             commands::set_auto_launch,
             commands::get_auto_launch_status,

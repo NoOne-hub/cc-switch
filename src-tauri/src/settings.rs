@@ -6,7 +6,7 @@ use std::sync::{OnceLock, RwLock};
 
 use crate::app_config::AppType;
 use crate::error::AppError;
-use crate::services::skill::SyncMethod;
+use crate::services::skill::{SkillSsotMode, SyncMethod};
 
 /// 自定义端点配置（历史兼容，实际存储在 provider.meta.custom_endpoints）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,6 +236,9 @@ pub struct AppSettings {
     /// Skill 同步方式：auto（默认，优先 symlink）、symlink、copy
     #[serde(default)]
     pub skill_sync_method: SyncMethod,
+    /// Skills SSOT 目录模式：auto（默认）| agents | ccswitch
+    #[serde(default)]
+    pub skill_ssot_mode: SkillSsotMode,
 
     // ===== WebDAV 同步设置 =====
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -295,6 +298,7 @@ impl Default for AppSettings {
             current_provider_opencode: None,
             current_provider_openclaw: None,
             skill_sync_method: SyncMethod::default(),
+            skill_ssot_mode: SkillSsotMode::default(),
             webdav_sync: None,
             webdav_backup: None,
             backup_interval_hours: None,
@@ -631,6 +635,17 @@ pub fn get_skill_sync_method() -> SyncMethod {
             e.into_inner()
         })
         .skill_sync_method
+}
+
+/// 获取 Skills SSOT 目录模式
+pub fn get_skill_ssot_mode() -> SkillSsotMode {
+    settings_store()
+        .read()
+        .unwrap_or_else(|e| {
+            log::warn!("设置锁已毒化，使用恢复值: {e}");
+            e.into_inner()
+        })
+        .skill_ssot_mode
 }
 
 // ===== 备份策略管理函数 =====
