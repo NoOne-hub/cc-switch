@@ -1034,6 +1034,35 @@ impl SkillService {
         Ok(())
     }
 
+    /// 根据 skill 目录名推断并删除对应 commands 文件（若存在）
+    fn remove_related_command_files(directory: &str, app: &AppType) -> Result<()> {
+        let app_dir = Self::get_app_skills_dir(app)?;
+        let Some(app_root) = app_dir.parent() else {
+            return Ok(());
+        };
+        let commands_dir = app_root.join("commands");
+
+        if !commands_dir.exists() {
+            return Ok(());
+        }
+
+        let direct = commands_dir.join(format!("{directory}.md"));
+        if direct.exists() || Self::is_symlink(&direct) {
+            Self::remove_path(&direct)?;
+        }
+
+        if let Some((group, rest)) = directory.split_once('-') {
+            if !group.is_empty() && !rest.is_empty() {
+                let grouped = commands_dir.join(group).join(format!("{rest}.md"));
+                if grouped.exists() || Self::is_symlink(&grouped) {
+                    Self::remove_path(&grouped)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// 从应用目录删除 Skill（支持 symlink 和真实目录）
     pub fn remove_from_app(directory: &str, app: &AppType) -> Result<()> {
         let app_dir = Self::get_app_skills_dir(app)?;
@@ -1043,6 +1072,9 @@ impl SkillService {
             Self::remove_path(&skill_path)?;
             log::debug!("Skill {directory} 已从 {app:?} 删除");
         }
+
+        // 同步清理可能由该 Skill 暴露的 commands 文件（如 gsd-*）
+        Self::remove_related_command_files(directory, app)?;
 
         Ok(())
     }
