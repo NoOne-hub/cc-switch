@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -22,6 +23,9 @@ import {
   KeyRound,
   Shield,
   Cpu,
+  Minus,
+  Square,
+  X,
 } from "lucide-react";
 import type { Provider, VisibleApps } from "@/types";
 import type { EnvConflict } from "@/types/env";
@@ -177,6 +181,52 @@ function App() {
     }
   }, [visibleApps, activeApp]);
 
+  useEffect(() => {
+    if (!isLinux()) return;
+    const win = getCurrentWindow();
+    let unlisten: (() => void) | undefined;
+
+    const syncMaxState = async () => {
+      try {
+        setIsWindowMaximized(await win.isMaximized());
+      } catch {
+        // ignore
+      }
+    };
+
+    void syncMaxState();
+    void win
+      .onResized(() => {
+        void syncMaxState();
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  const handleWindowMinimize = () => {
+    void getCurrentWindow().minimize();
+  };
+
+  const handleWindowToggleMaximize = () => {
+    const win = getCurrentWindow();
+    void win.toggleMaximize().then(async () => {
+      try {
+        setIsWindowMaximized(await win.isMaximized());
+      } catch {
+        // ignore
+      }
+    });
+  };
+
+  const handleWindowClose = () => {
+    void getCurrentWindow().close();
+  };
+
   // Fallback from sessions view when switching to an app without session support
   useEffect(() => {
     if (
@@ -199,6 +249,7 @@ function App() {
   } | null>(null);
   const [envConflicts, setEnvConflicts] = useState<EnvConflict[]>([]);
   const [showEnvBanner, setShowEnvBanner] = useState(false);
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
 
   const effectiveEditingProvider = useLastValidValue(editingProvider);
   const effectiveUsageProvider = useLastValidValue(usageProvider);
@@ -1263,6 +1314,42 @@ function App() {
                   </>
                 )}
               </div>
+              {isLinux() && (
+                <div
+                  className="ml-2 flex shrink-0 items-center gap-1"
+                  style={{ WebkitAppRegion: "no-drag" } as any}
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleWindowMinimize}
+                    className="h-9 w-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                    title={t("common.minimize", { defaultValue: "最小化" })}
+                  >
+                    <Minus className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleWindowToggleMaximize}
+                    className="h-9 w-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                    title={t("common.maximize", {
+                      defaultValue: isWindowMaximized ? "还原" : "最大化",
+                    })}
+                  >
+                    <Square className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleWindowClose}
+                    className="h-9 w-9 rounded-md text-muted-foreground hover:text-white hover:bg-red-500"
+                    title={t("common.close", { defaultValue: "关闭" })}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
