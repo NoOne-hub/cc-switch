@@ -64,16 +64,30 @@ const UnifiedSkillsPanel = React.forwardRef<
   const importMutation = useImportSkillsFromApps();
   const installFromZipMutation = useInstallSkillsFromZip();
 
+  const normalizedSkills = useMemo(() => {
+    if (!skills) return [] as InstalledSkill[];
+    return skills.map((skill) => ({
+      ...skill,
+      apps: {
+        claude: Boolean((skill as any)?.apps?.claude),
+        codex: Boolean((skill as any)?.apps?.codex),
+        gemini: Boolean((skill as any)?.apps?.gemini),
+        opencode: Boolean((skill as any)?.apps?.opencode),
+        openclaw: Boolean((skill as any)?.apps?.openclaw),
+      },
+    }));
+  }, [skills]);
+
   const enabledCounts = useMemo(() => {
     const counts = { claude: 0, codex: 0, gemini: 0, opencode: 0, openclaw: 0 };
-    if (!skills) return counts;
-    skills.forEach((skill) => {
+    if (!normalizedSkills) return counts;
+    normalizedSkills.forEach((skill) => {
       for (const app of MCP_SKILLS_APP_IDS) {
         if (skill.apps[app]) counts[app]++;
       }
     });
     return counts;
-  }, [skills]);
+  }, [normalizedSkills]);
   const selectedCount = selectedSkillIds.size;
 
   const handleToggleApp = async (id: string, app: AppId, enabled: boolean) => {
@@ -97,8 +111,8 @@ const UnifiedSkillsPanel = React.forwardRef<
   };
 
   const handleSelectAll = () => {
-    if (!skills || skills.length === 0) return;
-    setSelectedSkillIds(new Set(skills.map((s) => s.id)));
+    if (!normalizedSkills || normalizedSkills.length === 0) return;
+    setSelectedSkillIds(new Set(normalizedSkills.map((s) => s.id)));
   };
 
   const handleClearSelection = () => {
@@ -180,8 +194,8 @@ const UnifiedSkillsPanel = React.forwardRef<
   };
 
   const handleBatchUninstall = () => {
-    if (!skills || selectedSkillIds.size === 0) return;
-    const selected = skills.filter((s) => selectedSkillIds.has(s.id));
+    if (!normalizedSkills || selectedSkillIds.size === 0) return;
+    const selected = normalizedSkills.filter((s) => selectedSkillIds.has(s.id));
 
     setConfirmDialog({
       isOpen: true,
@@ -371,7 +385,7 @@ const UnifiedSkillsPanel = React.forwardRef<
             variant="outline"
             size="sm"
             onClick={handleSelectAll}
-            disabled={!skills || skills.length === 0 || batchBusy}
+            disabled={!normalizedSkills || normalizedSkills.length === 0 || batchBusy}
           >
             <CheckSquare className="w-3.5 h-3.5 mr-1.5" />
             {t("skills.selectAll", { defaultValue: "全选" })}
@@ -435,7 +449,7 @@ const UnifiedSkillsPanel = React.forwardRef<
           <div className="text-center py-12 text-muted-foreground">
             {t("skills.loading")}
           </div>
-        ) : !skills || skills.length === 0 ? (
+        ) : !normalizedSkills || normalizedSkills.length === 0 ? (
           <div className="text-center py-12">
             <div className="w-16 h-16 mx-auto mb-4 bg-muted rounded-full flex items-center justify-center">
               <Sparkles size={24} className="text-muted-foreground" />
@@ -450,7 +464,7 @@ const UnifiedSkillsPanel = React.forwardRef<
         ) : (
           <TooltipProvider delayDuration={300}>
             <div className="rounded-xl border border-border-default overflow-hidden">
-              {skills.map((skill, index) => (
+              {normalizedSkills.map((skill, index) => (
                 <InstalledSkillListItem
                   key={skill.id}
                   skill={skill}
@@ -460,7 +474,7 @@ const UnifiedSkillsPanel = React.forwardRef<
                   onSelectChange={(selected) =>
                     toggleSkillSelection(skill.id, selected)
                   }
-                  isLast={index === skills.length - 1}
+                  isLast={index === normalizedSkills.length - 1}
                 />
               ))}
             </div>
