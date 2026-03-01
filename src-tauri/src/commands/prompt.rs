@@ -69,9 +69,9 @@ pub fn get_prompt_shared_mode(state: State<'_, AppState>) -> Result<bool, String
         .db
         .get_setting("prompt_shared_mode")
         .map_err(|e| e.to_string())?;
-    Ok(matches!(
+    Ok(!matches!(
         value.as_deref(),
-        Some("true") | Some("1") | Some("yes") | Some("TRUE") | Some("YES")
+        Some("false") | Some("0") | Some("no") | Some("FALSE") | Some("NO")
     ))
 }
 

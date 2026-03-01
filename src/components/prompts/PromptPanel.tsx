@@ -31,7 +31,7 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
       messageParams?: Record<string, unknown>;
       onConfirm: () => void;
     } | null>(null);
-    const [sharedMode, setSharedMode] = useState(false);
+    const [sharedMode, setSharedMode] = useState(true);
 
     const {
       prompts,
@@ -51,7 +51,7 @@ const PromptPanel = React.forwardRef<PromptPanelHandle, PromptPanelProps>(
       promptsApi
         .getSharedMode()
         .then((enabled) => setSharedMode(enabled))
-        .catch(() => setSharedMode(false));
+        .catch(() => setSharedMode(true));
     }, [open]);
 
     // Listen for prompt import events from deep link

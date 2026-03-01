@@ -27,7 +27,7 @@ impl PromptService {
                 let normalized = v.trim().to_ascii_lowercase();
                 normalized == "true" || normalized == "1" || normalized == "yes"
             }
-            _ => false,
+            _ => true,
         }
     }
 
