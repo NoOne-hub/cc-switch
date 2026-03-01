@@ -23,18 +23,21 @@ import { ListItemRow } from "@/components/common/ListItemRow";
 
 interface UnifiedSkillsPanelProps {
   onOpenDiscovery: () => void;
+  currentApp: AppId;
 }
 
 export interface UnifiedSkillsPanelHandle {
   openDiscovery: () => void;
   openImport: () => void;
   openInstallFromZip: () => void;
+  openInstallFromGithub: () => void;
+  openInstallFromLocal: () => void;
 }
 
 const UnifiedSkillsPanel = React.forwardRef<
   UnifiedSkillsPanelHandle,
   UnifiedSkillsPanelProps
->(({ onOpenDiscovery }, ref) => {
+>(({ onOpenDiscovery, currentApp }, ref) => {
   const { t } = useTranslation();
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -44,7 +47,8 @@ const UnifiedSkillsPanel = React.forwardRef<
   } | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
 
-  const { data: skills, isLoading } = useInstalledSkills();
+  const { data: skills, isLoading, refetch: refetchInstalled } =
+    useInstalledSkills();
   const toggleAppMutation = useToggleSkillApp();
   const uninstallMutation = useUninstallSkill();
   const { data: unmanagedSkills, refetch: scanUnmanaged } =
@@ -120,7 +124,6 @@ const UnifiedSkillsPanel = React.forwardRef<
       const filePath = await skillsApi.openZipFileDialog();
       if (!filePath) return;
 
-      const currentApp: AppId = "claude";
       const installed = await installFromZipMutation.mutateAsync({
         filePath,
         currentApp,
@@ -148,10 +151,64 @@ const UnifiedSkillsPanel = React.forwardRef<
     }
   };
 
+  const handleInstallFromGithub = async () => {
+    const url = window.prompt(
+      t("skills.installFromGithub.input", {
+        defaultValue: "请输入 GitHub Skill 链接",
+      }),
+    );
+    if (!url || !url.trim()) return;
+
+    try {
+      const installed = await skillsApi.installFromGithubUrl(url.trim(), currentApp);
+      toast.success(
+        t("skills.installFromGithub.success", {
+          count: installed.length,
+          defaultValue: "已从 GitHub 导入 {{count}} 个 Skill",
+        }),
+        { closeButton: true },
+      );
+      await refetchInstalled();
+    } catch (error) {
+      toast.error(
+        t("skills.installFromGithub.failed", {
+          defaultValue: "GitHub 导入失败",
+        }),
+        { description: String(error) },
+      );
+    }
+  };
+
+  const handleInstallFromLocal = async () => {
+    try {
+      const dir = await settingsApi.selectConfigDirectory();
+      if (!dir) return;
+
+      const installed = await skillsApi.installFromLocalPath(dir, currentApp);
+      toast.success(
+        t("skills.installFromLocal.success", {
+          count: installed.length,
+          defaultValue: "已从本地导入 {{count}} 个 Skill",
+        }),
+        { closeButton: true },
+      );
+      await refetchInstalled();
+    } catch (error) {
+      toast.error(
+        t("skills.installFromLocal.failed", {
+          defaultValue: "本地导入失败",
+        }),
+        { description: String(error) },
+      );
+    }
+  };
+
   React.useImperativeHandle(ref, () => ({
     openDiscovery: onOpenDiscovery,
     openImport: handleOpenImport,
     openInstallFromZip: handleInstallFromZip,
+    openInstallFromGithub: handleInstallFromGithub,
+    openInstallFromLocal: handleInstallFromLocal,
   }));
 
   return (

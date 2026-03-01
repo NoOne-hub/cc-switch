@@ -13,6 +13,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tokio::time::timeout;
+use url::Url;
 
 use crate::app_config::{AppType, InstalledSkill, SkillApps, UnmanagedSkill};
 use crate::config::get_app_config_dir;
@@ -32,6 +33,19 @@ pub enum SyncMethod {
     Symlink,
     /// 文件复制（兼容模式）
     Copy,
+}
+
+/// Skills SSOT 目录模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillSsotMode {
+    /// 自动模式：优先复用 ~/.agents/skills（存在时），否则使用 ~/.cc-switch/skills
+    #[default]
+    Auto,
+    /// 强制使用 ~/.agents/skills
+    Agents,
+    /// 强制使用 ~/.cc-switch/skills
+    Ccswitch,
 }
 
 /// 可发现的技能（来自仓库）
@@ -250,6 +264,10 @@ fn get_agents_skills_dir() -> Option<PathBuf> {
         .filter(|p| p.exists())
 }
 
+fn get_agents_skills_dir_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".agents").join("skills"))
+}
+
 /// 解析 `~/.agents/.skill-lock.json`，返回 skill_name -> 仓库信息
 fn parse_agents_lock() -> HashMap<String, LockRepoInfo> {
     let path = match dirs::home_dir() {
@@ -349,9 +367,29 @@ impl SkillService {
 
     /// 获取 SSOT 目录（~/.cc-switch/skills/）
     pub fn get_ssot_dir() -> Result<PathBuf> {
-        let dir = get_app_config_dir().join("skills");
+        let dir = match crate::settings::get_skill_ssot_mode() {
+            SkillSsotMode::Auto => {
+                if let Some(agents) = get_agents_skills_dir() {
+                    agents
+                } else {
+                    get_app_config_dir().join("skills")
+                }
+            }
+            SkillSsotMode::Agents => get_agents_skills_dir_path()
+                .ok_or_else(|| anyhow!("无法获取 HOME 目录，不能使用 ~/.agents/skills 作为 SSOT"))?,
+            SkillSsotMode::Ccswitch => get_app_config_dir().join("skills"),
+        };
         fs::create_dir_all(&dir)?;
         Ok(dir)
+    }
+
+    fn is_agents_ssot_dir(ssot_dir: &Path) -> bool {
+        let Some(expected) = get_agents_skills_dir_path() else {
+            return false;
+        };
+        let canonical_expected = expected.canonicalize().unwrap_or(expected);
+        let canonical_input = ssot_dir.canonicalize().unwrap_or_else(|_| ssot_dir.to_path_buf());
+        canonical_input == canonical_expected
     }
 
     /// 获取应用的 skills 目录
@@ -405,7 +443,31 @@ impl SkillService {
 
     /// 获取所有已安装的 Skills
     pub fn get_all_installed(db: &Arc<Database>) -> Result<Vec<InstalledSkill>> {
-        let skills = db.get_all_installed_skills()?;
+        let mut skills = db.get_all_installed_skills()?;
+
+        // 与文件系统做一次轻量对齐：
+        // 若目标 app 目录里已经存在该 skill，则页面应直接展示为“已存在/已启用”。
+        for skill in skills.values_mut() {
+            let mut changed = false;
+            for app in AppType::all() {
+                if skill.apps.is_enabled_for(&app) {
+                    continue;
+                }
+                let app_dir = match Self::get_app_skills_dir(&app) {
+                    Ok(d) => d,
+                    Err(_) => continue,
+                };
+                let skill_path = app_dir.join(&skill.directory);
+                if skill_path.exists() || Self::is_symlink(&skill_path) {
+                    skill.apps.set_enabled_for(&app, true);
+                    changed = true;
+                }
+            }
+            if changed {
+                let _ = db.update_skill_apps(&skill.id, &skill.apps);
+            }
+        }
+
         Ok(skills.into_values().collect())
     }
 
@@ -635,8 +697,13 @@ impl SkillService {
         // 从 SSOT 删除
         let ssot_dir = Self::get_ssot_dir()?;
         let skill_path = ssot_dir.join(&skill.directory);
-        if skill_path.exists() {
+        if skill_path.exists() && !Self::is_agents_ssot_dir(&ssot_dir) {
             fs::remove_dir_all(&skill_path)?;
+        } else if skill_path.exists() {
+            log::info!(
+                "共享 .agents SSOT 模式：保留技能源目录 {}",
+                skill_path.display()
+            );
         }
 
         // 从数据库删除
@@ -861,6 +928,7 @@ impl SkillService {
     pub fn sync_to_app_dir(directory: &str, app: &AppType) -> Result<()> {
         let ssot_dir = Self::get_ssot_dir()?;
         let source = ssot_dir.join(directory);
+        let shared_agents_ssot = Self::is_agents_ssot_dir(&ssot_dir);
 
         if !source.exists() {
             return Err(anyhow!("Skill 不存在于 SSOT: {directory}"));
@@ -887,6 +955,11 @@ impl SkillService {
                         return Ok(());
                     }
                     Err(err) => {
+                        if shared_agents_ssot {
+                            return Err(anyhow!(
+                                "共享 .agents SSOT 模式下禁止 copy 回退。请检查符号链接权限后重试。原始错误: {err:#}"
+                            ));
+                        }
                         log::warn!(
                             "Symlink 创建失败，将回退到文件复制: {} -> {}. 错误: {err:#}",
                             source.display(),
@@ -903,6 +976,11 @@ impl SkillService {
                 log::debug!("Skill {directory} 已通过 symlink 同步到 {app:?}");
             }
             SyncMethod::Copy => {
+                if shared_agents_ssot {
+                    return Err(anyhow!(
+                        "共享 .agents SSOT 模式下不允许 Copy 同步，请将 skill_sync_method 改为 auto 或 symlink。"
+                    ));
+                }
                 Self::copy_dir_recursive(&source, &dest)?;
                 log::debug!("Skill {directory} 已通过复制同步到 {app:?}");
             }
@@ -1611,6 +1689,180 @@ impl SkillService {
         Ok(installed)
     }
 
+    /// 从本地路径导入 Skills（支持目录）
+    pub fn install_from_local_path(
+        db: &Arc<Database>,
+        local_path: &Path,
+        current_app: &AppType,
+    ) -> Result<Vec<InstalledSkill>> {
+        if !local_path.exists() {
+            return Err(anyhow!(format_skill_error(
+                "SKILL_DIR_NOT_FOUND",
+                &[("path", &local_path.display().to_string())],
+                Some("checkPath"),
+            )));
+        }
+
+        if local_path.is_file() {
+            let is_zip = local_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("zip"))
+                .unwrap_or(false);
+            if is_zip {
+                return Self::install_from_zip(db, local_path, current_app);
+            }
+            return Err(anyhow!(format_skill_error(
+                "INVALID_SKILL_DIRECTORY",
+                &[("path", &local_path.display().to_string())],
+                Some("selectDirectory"),
+            )));
+        }
+
+        let skill_dirs = Self::scan_skills_in_dir(local_path)?;
+        if skill_dirs.is_empty() {
+            return Err(anyhow!(format_skill_error(
+                "NO_SKILLS_IN_ZIP",
+                &[("path", &local_path.display().to_string())],
+                Some("checkSkillMd"),
+            )));
+        }
+
+        let ssot_dir = Self::get_ssot_dir()?;
+        let mut installed = Vec::new();
+        let existing_skills = db.get_all_installed_skills()?;
+
+        for skill_dir in skill_dirs {
+            let skill_md = skill_dir.join("SKILL.md");
+            let meta = if skill_md.exists() {
+                Self::parse_skill_metadata_static(&skill_md).ok()
+            } else {
+                None
+            };
+
+            let dir_name = skill_dir
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            let install_name = Self::sanitize_install_name(&dir_name)
+                .or_else(|| {
+                    meta.as_ref()
+                        .and_then(|m| m.name.as_deref())
+                        .and_then(Self::sanitize_install_name)
+                })
+                .ok_or_else(|| {
+                    anyhow!(format_skill_error(
+                        "INVALID_SKILL_DIRECTORY",
+                        &[("path", &skill_dir.display().to_string())],
+                        Some("checkSkillMd"),
+                    ))
+                })?;
+
+            if existing_skills
+                .values()
+                .any(|s| s.directory.eq_ignore_ascii_case(&install_name))
+            {
+                continue;
+            }
+
+            let (name, description) = match meta {
+                Some(m) => (
+                    m.name.unwrap_or_else(|| install_name.clone()),
+                    m.description,
+                ),
+                None => (install_name.clone(), None),
+            };
+
+            let dest = ssot_dir.join(&install_name);
+            if dest.exists() {
+                let _ = fs::remove_dir_all(&dest);
+            }
+            Self::copy_dir_recursive(&skill_dir, &dest)?;
+
+            let skill = InstalledSkill {
+                id: format!("local:{install_name}"),
+                name,
+                description,
+                directory: install_name.clone(),
+                repo_owner: None,
+                repo_name: None,
+                repo_branch: None,
+                readme_url: None,
+                apps: SkillApps::only(current_app),
+                installed_at: chrono::Utc::now().timestamp(),
+            };
+
+            db.save_skill(&skill)?;
+            Self::sync_to_app_dir(&install_name, current_app)?;
+            installed.push(skill);
+        }
+
+        Ok(installed)
+    }
+
+    /// 从 GitHub 链接导入 Skills
+    pub async fn install_from_github_url(
+        &self,
+        db: &Arc<Database>,
+        github_url: &str,
+        current_app: &AppType,
+    ) -> Result<Vec<InstalledSkill>> {
+        let (owner, name, branch, path_filter) = Self::parse_github_skill_url(github_url)?;
+
+        let repo = SkillRepo {
+            owner: owner.clone(),
+            name: name.clone(),
+            branch: branch.clone(),
+            enabled: true,
+        };
+
+        let _ = db.save_skill_repo(&repo);
+
+        let mut discovered = self.discover_available(vec![repo]).await?;
+        if discovered.is_empty() {
+            return Err(anyhow!(format_skill_error(
+                "SKILL_NOT_FOUND",
+                &[("url", github_url)],
+                Some("checkRepoUrl"),
+            )));
+        }
+
+        if let Some(filter) = path_filter.as_deref() {
+            discovered.retain(|s| Self::matches_skill_path(&s.directory, filter));
+            if discovered.is_empty() {
+                return Err(anyhow!(format_skill_error(
+                    "SKILL_NOT_FOUND",
+                    &[("directory", filter)],
+                    Some("checkRepoUrl"),
+                )));
+            }
+        }
+
+        let mut installed = Vec::new();
+        for skill in discovered {
+            match self.install(db, &skill, current_app).await {
+                Ok(s) => installed.push(s),
+                Err(e) => log::warn!(
+                    "从 GitHub 链接安装 skill 失败（{} / {}）: {}",
+                    skill.repo_owner,
+                    skill.directory,
+                    e
+                ),
+            }
+        }
+
+        if installed.is_empty() {
+            return Err(anyhow!(format_skill_error(
+                "SKILL_NOT_FOUND",
+                &[("url", github_url)],
+                Some("checkRepoUrl"),
+            )));
+        }
+
+        Ok(installed)
+    }
+
     /// 解压本地 ZIP 文件到临时目录
     fn extract_local_zip(zip_path: &Path) -> Result<PathBuf> {
         let file = fs::File::open(zip_path)
@@ -1696,6 +1948,96 @@ impl SkillService {
         }
 
         Ok(())
+    }
+
+    fn parse_github_skill_url(url: &str) -> Result<(String, String, String, Option<String>)> {
+        let parsed = Url::parse(url).map_err(|_| {
+            anyhow!(format_skill_error(
+                "INVALID_SKILL_DIRECTORY",
+                &[("url", url)],
+                Some("checkRepoUrl"),
+            ))
+        })?;
+
+        let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+        if host != "github.com" && host != "www.github.com" {
+            return Err(anyhow!(format_skill_error(
+                "INVALID_SKILL_DIRECTORY",
+                &[("url", url)],
+                Some("checkRepoUrl"),
+            )));
+        }
+
+        let segments: Vec<String> = parsed
+            .path_segments()
+            .map(|s| s.filter(|x| !x.is_empty()).map(|x| x.to_string()).collect())
+            .unwrap_or_default();
+
+        if segments.len() < 2 {
+            return Err(anyhow!(format_skill_error(
+                "INVALID_SKILL_DIRECTORY",
+                &[("url", url)],
+                Some("checkRepoUrl"),
+            )));
+        }
+
+        let owner = segments[0].clone();
+        let repo = segments[1].trim_end_matches(".git").to_string();
+        let mut branch = "HEAD".to_string();
+        let mut path_filter: Option<String> = None;
+
+        if segments.len() >= 4 && (segments[2] == "tree" || segments[2] == "blob") {
+            branch = segments[3].clone();
+            if segments.len() > 4 {
+                let mut p = segments[4..].join("/");
+                if p.ends_with("/SKILL.md") {
+                    p = p.trim_end_matches("/SKILL.md").to_string();
+                } else if p.eq_ignore_ascii_case("SKILL.md") {
+                    p.clear();
+                }
+                if !p.is_empty() {
+                    path_filter = Some(p);
+                }
+            }
+        }
+
+        Ok((owner, repo, branch, path_filter))
+    }
+
+    fn matches_skill_path(skill_directory: &str, raw_filter: &str) -> bool {
+        let skill = skill_directory
+            .trim()
+            .trim_matches('/')
+            .replace('\\', "/")
+            .to_ascii_lowercase();
+        let mut filter = raw_filter
+            .trim()
+            .trim_matches('/')
+            .replace('\\', "/")
+            .to_ascii_lowercase();
+
+        if filter.ends_with("/skill.md") {
+            filter = filter.trim_end_matches("/skill.md").to_string();
+        }
+
+        if skill == filter {
+            return true;
+        }
+
+        if !filter.is_empty() && skill.starts_with(&(filter.clone() + "/")) {
+            return true;
+        }
+
+        let skill_name = Path::new(&skill)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or(skill);
+        let filter_name = Path::new(&filter)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or(filter);
+
+        skill_name == filter_name
     }
 
     // ========== 仓库管理（保留原有逻辑）==========

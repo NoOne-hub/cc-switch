@@ -21,6 +21,7 @@ fn parse_app_type(app: &str) -> Result<AppType, String> {
         "codex" => Ok(AppType::Codex),
         "gemini" => Ok(AppType::Gemini),
         "opencode" => Ok(AppType::OpenCode),
+        "openclaw" => Ok(AppType::OpenClaw),
         _ => Err(format!("不支持的 app 类型: {app}")),
     }
 }
@@ -261,4 +262,33 @@ pub fn install_skills_from_zip(
     let path = std::path::Path::new(&file_path);
 
     SkillService::install_from_zip(&app_state.db, path, &app_type).map_err(|e| e.to_string())
+}
+
+/// 从本地目录导入 Skills（支持包含 SKILL.md 的目录）
+#[tauri::command]
+pub fn install_skills_from_local_path(
+    local_path: String,
+    current_app: String,
+    app_state: State<'_, AppState>,
+) -> Result<Vec<InstalledSkill>, String> {
+    let app_type = parse_app_type(&current_app)?;
+    let path = std::path::Path::new(&local_path);
+
+    SkillService::install_from_local_path(&app_state.db, path, &app_type).map_err(|e| e.to_string())
+}
+
+/// 从 GitHub URL 导入 Skills
+#[tauri::command]
+pub async fn install_skill_from_github_url(
+    url: String,
+    current_app: String,
+    service: State<'_, SkillServiceState>,
+    app_state: State<'_, AppState>,
+) -> Result<Vec<InstalledSkill>, String> {
+    let app_type = parse_app_type(&current_app)?;
+    service
+        .0
+        .install_from_github_url(&app_state.db, &url, &app_type)
+        .await
+        .map_err(|e| e.to_string())
 }

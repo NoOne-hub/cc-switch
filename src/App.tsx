@@ -16,6 +16,7 @@ import {
   BarChart2,
   Download,
   FolderArchive,
+  Link2,
   Search,
   FolderOpen,
   KeyRound,
@@ -698,6 +699,11 @@ function App() {
             <UnifiedSkillsPanel
               ref={unifiedSkillsPanelRef}
               onOpenDiscovery={() => setCurrentView("skillsDiscovery")}
+              currentApp={
+                activeApp === "opencode" || activeApp === "openclaw"
+                  ? "claude"
+                  : activeApp
+              }
             />
           );
         case "skillsDiscovery":
@@ -1029,6 +1035,32 @@ function App() {
                 )}
                 {currentView === "skills" && (
                   <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        unifiedSkillsPanelRef.current?.openInstallFromGithub()
+                      }
+                      className="hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <Link2 className="w-4 h-4 mr-2" />
+                      {t("skills.installFromGithub.button", {
+                        defaultValue: "GitHub 导入",
+                      })}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        unifiedSkillsPanelRef.current?.openInstallFromLocal()
+                      }
+                      className="hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <FolderOpen className="w-4 h-4 mr-2" />
+                      {t("skills.installFromLocal.button", {
+                        defaultValue: "本地目录导入",
+                      })}
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"

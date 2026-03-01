@@ -169,4 +169,23 @@ export const skillsApi = {
   ): Promise<InstalledSkill[]> {
     return await invoke("install_skills_from_zip", { filePath, currentApp });
   },
+
+  /** 从本地目录导入 Skills */
+  async installFromLocalPath(
+    localPath: string,
+    currentApp: AppId,
+  ): Promise<InstalledSkill[]> {
+    return await invoke("install_skills_from_local_path", {
+      localPath,
+      currentApp,
+    });
+  },
+
+  /** 从 GitHub 链接导入 Skills */
+  async installFromGithubUrl(
+    url: string,
+    currentApp: AppId,
+  ): Promise<InstalledSkill[]> {
+    return await invoke("install_skill_from_github_url", { url, currentApp });
+  },
 };

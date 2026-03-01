@@ -20,6 +20,7 @@ import {
   useSkillRepos,
   useAddSkillRepo,
   useRemoveSkillRepo,
+  useScanUnmanagedSkills,
 } from "@/hooks/useSkills";
 import type { AppId } from "@/lib/api/types";
 import type { DiscoverableSkill, SkillRepo } from "@/lib/api/skills";
@@ -59,6 +60,7 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       refetch: refetchDiscoverable,
     } = useDiscoverableSkills();
     const { data: installedSkills } = useInstalledSkills();
+    const { data: unmanagedSkills } = useScanUnmanagedSkills({ enabled: true });
     const { data: repos = [], refetch: refetchRepos } = useSkillRepos();
 
     // Mutations
@@ -78,6 +80,11 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
         }),
       );
     }, [installedSkills]);
+
+    const unmanagedDirectories = useMemo(() => {
+      if (!unmanagedSkills) return new Set<string>();
+      return new Set(unmanagedSkills.map((s) => s.directory.toLowerCase()));
+    }, [unmanagedSkills]);
 
     type DiscoverableSkillItem = DiscoverableSkill & { installed: boolean };
 
@@ -105,10 +112,10 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
         const key = `${installName}:${d.repoOwner.toLowerCase()}:${d.repoName.toLowerCase()}`;
         return {
           ...d,
-          installed: installedKeys.has(key),
+          installed: installedKeys.has(key) || unmanagedDirectories.has(installName),
         };
       });
-    }, [discoverableSkills, installedKeys]);
+    }, [discoverableSkills, installedKeys, unmanagedDirectories]);
 
     const loading = loadingDiscoverable || fetchingDiscoverable;
 

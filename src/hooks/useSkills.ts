@@ -85,11 +85,11 @@ export function useToggleSkillApp() {
 /**
  * 扫描未管理的 Skills
  */
-export function useScanUnmanagedSkills() {
+export function useScanUnmanagedSkills(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["skills", "unmanaged"],
     queryFn: () => skillsApi.scanUnmanaged(),
-    enabled: false, // 手动触发
+    enabled: options?.enabled ?? false, // 默认手动触发
   });
 }
 
